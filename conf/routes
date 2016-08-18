@@ -28,6 +28,7 @@ PUT           /autorest/:group/:environment/*remoteTarget                       
 POST          /autorest/:group/:environment/*remoteTarget                                                controllers.Rest.autoIndex(group, environment, remoteTarget)
 
 # Soap
+GET           /soap/:environment/*localTarget                                                            controllers.Soap.getWSDL(environment, localTarget)
 POST          /soap/:environment/*localTarget                                                            controllers.Soap.index(environment, localTarget)
 POST          /autosoap/:group/:environment/*remoteTarget                                                controllers.Soap.autoIndex(group, environment, remoteTarget)
 POST          /replay/soap/:id                                                                           controllers.Soap.replay(id:String)

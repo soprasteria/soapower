@@ -65,4 +65,3 @@ spApp.run(['$location', '$rootScope', function ($location, $rootScope) {
         $rootScope.$broadcast("showGroupsFilter", false, "Soapower");
     });
 }]);
-

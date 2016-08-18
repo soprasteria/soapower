@@ -1,13 +1,12 @@
 package models
 
-import com.ning.http.client.{AsyncHttpClient, FluentCaseInsensitiveStringsMap}
+import com.ning.http.client.{FluentCaseInsensitiveStringsMap}
 import com.ning.http.client.providers.netty.NettyResponse
 import scala.concurrent.Future
 import scala.concurrent.Await
 import scala.concurrent.duration._
 import play.api.libs.ws._
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import play.api.libs.concurrent._
 import play.core.utils.CaseInsensitiveOrdered
 import play.Logger
 import collection.immutable.TreeMap
@@ -16,6 +15,7 @@ import java.io.StringWriter
 import java.io.PrintWriter
 import play.api.Play.current
 import org.jboss.netty.handler.codec.http.HttpMethod
+import java.net.{HttpURLConnection, URL}
 
 object Client {
   private val DEFAULT_NO_SOAPACTION = "Soapower_NoSoapAction"
@@ -73,6 +73,8 @@ class Client(pService: Service, environmentName: String, sender: String, content
 
   var response: ClientResponse = null
 
+  var wsdlResponse: WSDLClientResponse = null
+
   private var futureResponse: Future[WSResponse] = null
   private var requestTimeInMillis: Long = -1
 
@@ -100,6 +102,7 @@ class Client(pService: Service, environmentName: String, sender: String, content
 
   /**
    * Send a request to a REST service
+ *
    * @param correctUrl
    * @param query
    */
@@ -159,11 +162,12 @@ class Client(pService: Service, environmentName: String, sender: String, content
    * Send a request to a SOAP service
    */
   def sendSoapRequestAndWaitForResponse() {
+
     if (Logger.isDebugEnabled) {
       Logger.debug("RemoteTarget (soap)" + service.remoteTarget)
     }
 
-    requestTimeInMillis = System.currentTimeMillis
+   requestTimeInMillis = System.currentTimeMillis
 
     // prepare request
     var wsRequestHolder = WS.url(service.remoteTarget).withRequestTimeout(service.timeoutms.toInt)
@@ -186,6 +190,25 @@ class Client(pService: Service, environmentName: String, sender: String, content
     }
     // save the request and response data to DB
     saveData(content)
+  }
+
+  /**
+    * Permet d'envoyer une demande de WSDL.
+    * Pour le moment ce type de trame n'est pas persiste
+    */
+  def sendGetWSDLRequest() {
+
+    requestTimeInMillis = System.currentTimeMillis
+
+    val connection = new URL(service.remoteTarget + "?wsdl").openConnection.asInstanceOf[HttpURLConnection]
+    connection.setConnectTimeout(5000)
+    connection.setRequestMethod("GET")
+    val inputStream = connection.getInputStream
+    val content: String = scala.io.Source.fromInputStream(inputStream).mkString
+    if (inputStream != null) inputStream.close
+
+    wsdlResponse = new WSDLClientResponse(content, (System.currentTimeMillis - requestTimeInMillis))
+
   }
 
   private def waitForResponse(headers: Map[String, String]) = {
@@ -230,6 +253,7 @@ class Client(pService: Service, environmentName: String, sender: String, content
 
   /**
    * If content is null or empty, return "[null or empty]"
+ *
    * @param content a string
    * @return [null or empty] or the content if not null (or empty!)
    */
@@ -311,6 +335,12 @@ class ClientResponse(wsResponse: WSResponse = null, val responseTimeInMillis: Lo
     val res = mapAsScalaMapConverter(headersNing).asScala.map(e => e._1 -> e._2.asScala.toSeq).toMap
     TreeMap(res.toSeq: _*)(CaseInsensitiveOrdered)
   }
+}
+
+class WSDLClientResponse(wsdl : String = null, val responseTimeInMillis: Long) {
+
+  var body: String = if (wsdl != null) wsdl else ""
+
 }
 
 

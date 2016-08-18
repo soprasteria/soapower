@@ -1,28 +1,78 @@
 package controllers
 
+import java.net.{InetAddress, NetworkInterface}
+
+import models.RequestData._
+import models._
+import org.jboss.netty.handler.codec.http.HttpMethod
 import play.Logger
 import play.api.http.HeaderNames
-import play.api.mvc._
-import play.api.libs.iteratee._
-import models._
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
+import play.api.mvc._
+import reactivemongo.bson.{BSONDocument, BSONObjectID}
+
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
-import reactivemongo.bson.{BSONDocument, BSONObjectID}
-import models.RequestData._
-import org.jboss.netty.handler.codec.http.HttpMethod
+
 
 object Soap extends Controller {
 
-  def index(environment: String, localTarget: String) = Action.async(parse.xml) {
+  def getWSDL(environment: String, localTarget: String) = Action.async {
     implicit request =>
-      Logger.debug("Request on environment:" + environment + " localTarget:" + localTarget)
-      val requestContentType = request.contentType.get
-      val sender = request.remoteAddress
-      val content = request.body.toString()
-      val headers = request.headers.toSimpleMap
-      forwardRequest(environment, localTarget, sender, content, headers, requestContentType)
+
+      Logger.debug("Request WSDL on environment:" + environment + " localTarget:" + localTarget)
+
+
+      val service = Service.findByLocalTargetAndEnvironmentName(Service.SOAP, localTarget, environment, HttpMethod.POST)
+      service.map(svc =>
+        if (svc.isDefined && svc.get != null) {
+          // Appel du serivce distant pour recuperer le wsdl
+          val client = new Client(svc.get, environment, null, null, null, null, null)
+          client.sendGetWSDLRequest
+          var wsdl : String = client.wsdlResponse.body
+
+          // Modification de la location pour ne pas recontacter directement la cible mais passer par Soapower
+          wsdl = rewriteTargetLocation(wsdl, environment, localTarget)
+
+          Ok(wsdl)
+        } else {
+          val err = "environment " + environment + " with localTarget " + localTarget + " unknown"
+          Logger.error(err)
+          BadRequest(err)
+        }
+      )
   }
+
+
+   def index(environment: String, localTarget: String) = Action.async(parse.anyContent) {
+     implicit request =>
+
+       Logger.debug("Request on environment:" + environment + " localTarget:" + localTarget)
+
+       // On determine si le flux est du XML ou du MTOM
+       var content : String = null
+       if (request.body.isInstanceOf[AnyContentAsXml]) {
+
+         content = request.body.asInstanceOf[AnyContentAsXml].xml.toString
+
+       } else {
+
+         // Cas MTOM
+         val buffer: RawBuffer = request.body.asRaw.get
+         content = buffer.asBytes() match {
+           case Some(x) => new String(x, "UTF-8")
+           case None => scala.io.Source.fromFile(buffer.asFile).mkString
+         }
+
+       }
+
+       val requestContentType = request.contentType.get
+       val sender = request.remoteAddress
+       val headers = request.headers.toSimpleMap
+
+       forwardRequest(environment, localTarget, sender, content, headers, requestContentType)
+
+      }
 
   /**
    * Automatically detect new services. If the given parameters interpolates an existing service, then nothing is created otherwise a new service is created.
@@ -108,7 +158,8 @@ object Soap extends Controller {
 
   /**
    * Replay a given request.
-   * @param requestId request to replay, content is post by user
+    *
+    * @param requestId request to replay, content is post by user
    */
   def replay(requestId: String) = Action.async(parse.xml) {
     implicit request =>
@@ -136,7 +187,7 @@ object Soap extends Controller {
   private def forwardRequest(environmentName: String, localTarget: String, sender: String, content: String, headers: Map[String, String], requestContentType: String): Future[Result] = {
     val service = Service.findByLocalTargetAndEnvironmentName(Service.SOAP, localTarget, environmentName, HttpMethod.POST)
 
-    service.map(svc =>
+     service.map(svc =>
       if (svc.isDefined && svc.get != null) {
         val client = new Client(svc.get, environmentName, sender, content, headers, Service.SOAP, requestContentType)
         if (svc.get.useMockGroup && svc.get.mockGroupId.isDefined) {
@@ -167,5 +218,23 @@ object Soap extends Controller {
         BadRequest(err)
       }
     )
+  }
+
+  /**
+    * Permet de redefinir la l'hote a appeler lorsque l'on passe par Soapower, sinon le client appelle directement la cible.
+    *
+    * @param wsdl La wsdl à modifier
+    * @param environment
+    * @param localTarget
+    *
+    * @return la wsdl avec la location pointant vers le service soapower correspondant
+    */
+  private def rewriteTargetLocation(wsdl: String, environment: String, localTarget: String) = {
+
+    val hostname = InetAddress.getLocalHost.getHostName
+    val port = System.getProperty("http.port", "9000")
+
+    wsdl.replaceAll("location=\".+\"", "location=\"http://" + hostname + ":" + port + "/soap/" + environment + "/" + localTarget +"\"")
+
   }
 }

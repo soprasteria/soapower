@@ -26,15 +26,24 @@ object Soap extends Controller {
       val service = Service.findByLocalTargetAndEnvironmentName(Service.SOAP, localTarget, environment, HttpMethod.POST)
       service.map(svc =>
         if (svc.isDefined && svc.get != null) {
-          // Appel du serivce distant pour recuperer le wsdl
-          val client = new Client(svc.get, environment, null, null, null, null, null)
-          client.sendGetWSDLRequest
-          var wsdl : String = client.wsdlResponse.body
+          if (svc.get.useMockGroup && svc.get.mockGroupId.isDefined) {
 
-          // Modification de la location pour ne pas recontacter directement la cible mais passer par Soapower
-          wsdl = rewriteTargetLocation(wsdl, environment, localTarget)
+            val fmock = Mock.findByMockGroupAndContent(BSONObjectID(svc.get.mockGroupId.get), "")
+            val mock = Await.result(fmock, 1.second)
 
-          Ok(wsdl)
+
+            Ok(mock.wsdl)
+          } else {
+            // Call remote service to get WSDL back
+            val client = new Client(svc.get, environment, null, null, null, null, null)
+            client.sendGetWSDLRequest
+            var wsdl: String = client.wsdlResponse.body
+
+            // Modify the location to call Soapower instead of remote target in the next call
+            wsdl = rewriteTargetLocation(wsdl, environment, localTarget)
+
+            Ok(wsdl)
+          }
         } else {
           val err = "environment " + environment + " with localTarget " + localTarget + " unknown"
           Logger.error(err)
@@ -197,7 +206,11 @@ object Soap extends Controller {
           val sr = new Results.Status(mock.httpStatus).apply(mock.response.getBytes())
             .withHeaders("ProxyVia" -> "soapower")
             .withHeaders(UtilConvert.headersFromString(mock.httpHeaders).toArray: _*)
-            .as(XML)
+
+          // Define Content-Type only if not defined in the Mock
+          if (!mock.httpHeaders.contains("Content-Type")) {
+            sr.as(XML)
+          }
 
           val timeoutFuture = play.api.libs.concurrent.Promise.timeout(sr, mock.timeoutms.milliseconds)
           Await.result(timeoutFuture, 10.second) // 10 seconds (10000 ms) is the maximum allowed.
@@ -221,13 +234,12 @@ object Soap extends Controller {
   }
 
   /**
-    * Permet de redefinir la l'hote a appeler lorsque l'on passe par Soapower, sinon le client appelle directement la cible.
+    * Redefine host to call when get WSDL back, to avoid calling the remote target directly
     *
-    * @param wsdl La wsdl à modifier
+    * @param wsdl wsdl to modify
     * @param environment
     * @param localTarget
-    *
-    * @return la wsdl avec la location pointant vers le service soapower correspondant
+    * @return wsdl with location on Soapower
     */
   private def rewriteTargetLocation(wsdl: String, environment: String, localTarget: String) = {
 

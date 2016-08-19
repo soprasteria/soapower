@@ -20,6 +20,7 @@ case class Mock(_id: Option[BSONObjectID],
                 httpHeaders: String,
                 criteria: String,
                 response: String,
+                wsdl: String,
                 mockGroupName: Option[String]) {
   def this(mockDoc: BSONDocument, mockGroupName: Option[String]) =
     this(
@@ -31,6 +32,7 @@ case class Mock(_id: Option[BSONObjectID],
       mockDoc.getAs[String]("httpHeaders").get,
       mockDoc.getAs[String]("criteria").get,
       mockDoc.getAs[String]("response").get,
+      mockDoc.getAs[String]("wsdl").get,
       mockGroupName)
 }
 
@@ -73,7 +75,8 @@ object Mock {
         "httpStatus" -> BSONInteger(mock.httpStatus),
         "httpHeaders" -> BSONString(mock.httpHeaders),
         "criteria" -> BSONString(mock.criteria),
-        "response" -> BSONString(mock.response))
+        "response" -> BSONString(mock.response),
+        "wsdl" -> BSONString(mock.wsdl))
   }
 
   /**
@@ -151,7 +154,7 @@ object Mock {
     mocksGroup.map(
       omocks => {
         val noMockFound: Mock = new Mock(Some(BSONObjectID.generate), "mockNotFoundName", "mockNotFoundDescription", -1,
-          0, HttpStatus.SC_INTERNAL_SERVER_ERROR.toString, "noCriteria", "no mock found in soapower",
+          0, HttpStatus.SC_INTERNAL_SERVER_ERROR.toString, "noCriteria", "no mock found in soapower", "no mock found",
           Some("Error getting Mock with mockGroupId " + mockGroupId)
         )
 

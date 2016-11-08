@@ -23,6 +23,18 @@ spApp.factory("GroupsService", function ($http) {
 });
 
 /***************************************
+ *  CONFIGURATION
+ ***************************************/
+
+spApp.factory("ConfigurationService", function ($http) {
+    return {
+        configurationExample: function () {
+            return $http.get('/bulk/configurationExample');
+        }
+    }
+});
+
+/***************************************
  *  ENVIRONMENTS
  ***************************************/
 spApp.factory('Environment', function ($resource) {

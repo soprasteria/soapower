@@ -50,6 +50,11 @@ DELETE        /environments/:id                                                 
 # Groups
 GET           /groups/findAll                                                                            controllers.admin.Environments.findAllGroups
 
+# Bulk configuration
+GET           /bulk/downloadConfiguration                                                                controllers.admin.BulkConfiguration.downloadConfiguration
+GET           /bulk/configurationExample                                                                 controllers.admin.BulkConfiguration.configurationExample
+POST          /bulk/uploadConfiguration                                                                  controllers.admin.BulkConfiguration.uploadConfiguration
+
 # Mock Groups
 GET           /mockgroups/:group/findall                                                                 controllers.admin.MockGroups.findAll(group:String)
 POST          /mockgroups                                                                                controllers.admin.MockGroups.create

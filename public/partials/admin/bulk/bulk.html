@@ -1,0 +1,45 @@
+<h2>Bulk Operations</h2>
+
+<h3>Download Configuration</h3>
+
+<div class="well">
+    Download a CSV file containing Environments and Services data.
+    <ul>
+        <li>Each type is defined with a key</li>
+        <li>Description of each type of data is described below</li>
+    </ul>
+</div>
+
+<p class="muted">
+    <div hljs language="bash" source="exampleCode">
+    </div>
+</p>
+
+<a class="btn btn-primary" href="{{downloadConfigurationURL}}"><i class="fa fa-download"></i> Download configuration as CSV</a>
+
+<h3>Upload Configuration</h3>
+
+<div class="well">
+    <p>Upload a CSV file containing Environments and Services data. Be aware of the following rules :</p>
+    <ul>
+        <li>You can download a file containing current data with "Download configuration" button.</li>
+        <li>Uploading a file only creates or updates existing data. It does not delete anything.</li>
+        <li>An environment and a service are uniquely identified by their ids.</li>
+        <li>If the id is empty, the environment and the service will be either created or updated depending on other data (ex: name for the environment)</li>
+        <li>If the id is not empty and exist in db, the entity will be updated. If it does not, the entity will be created with this id</li>
+        <li>Uploading will iterate through every line and compute a report with all encountered errors. If any error, you have to fix them and upload the file again</li>
+    </ul>
+</div>
+
+<form action="{{uploadConfigurationURL}}" ng-upload="uploadCompleted(content)">
+    <input type="file" name="fileUploaded"/>
+    <input type="submit" class="btn btn-primary" ng-disabled="$isUploading" value="Upload configuration from CSV"/>
+</form>
+
+<div class="alert alert-info" ng-show="$isUploading">Wait... Uploading.</div>
+<div class="alert alert-{{response.code}}" ng-show="showResponseUpload && !$isUploading">
+    {{response.text}}
+    <ul>
+        <li ng-repeat="error in response.data">{{error}}</li>
+    </ul>
+</div>

@@ -2,7 +2,7 @@
 
 'use strict';
 
-var spApp = angular.module('spApp', [ 'ui.bootstrap', 'ngRoute', 'ngResource', 'ngTable', 'ui.bootstrap.datetimepicker', 'ui.select2', 'hljs']);
+var spApp = angular.module('spApp', [ 'ui.bootstrap', 'ngRoute', 'ngResource', 'ngTable', 'ui.bootstrap.datetimepicker', 'ui.select2', 'hljs', 'ngUpload']);
 
 spApp.config(function ($routeProvider) {
     $routeProvider
@@ -36,6 +36,8 @@ spApp.config(function ($routeProvider) {
         .when('/services/new/:environmentName/:groups', {controller: ServiceNewCtrl, templateUrl: 'partials/admin/services/detail.html'})
         .when('/services/edit/:environmentName/:serviceId/:groups', {controller: ServiceEditCtrl, templateUrl: 'partials/admin/services/detail.html'})
         .when('/services/list/:environmentName/:groups', { controller: ServicesCtrl, templateUrl: 'partials/admin/services/list.html'})
+
+         .when('/bulk', { controller: BulkCtrl, templateUrl: 'partials/admin/bulk/bulk.html'})
 
         .when('/environments', {  redirectTo: '/environments/list/all'})
         .when('/environments/new/:groups', {controller: EnvironmentNewCtrl, templateUrl: 'partials/admin/environments/detail.html'})

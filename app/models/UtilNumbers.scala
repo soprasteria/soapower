@@ -1,5 +1,7 @@
 package models
 
+import scala.util.Try
+
 /**
   * Contains util functions around numbers.
   */
@@ -11,11 +13,5 @@ object UtilNumbers {
     * @param s the string to convert
     * @return
     */
-  def toInt(s: String): Option[Int] = {
-    try {
-      Some(s.toInt)
-    } catch {
-      case e: Exception => None
-    }
-  }
+  def toInt(s: String): Option[Int] = Try(s.toInt).toOption
 }

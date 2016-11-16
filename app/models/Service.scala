@@ -48,10 +48,10 @@ case class Service(_id: Option[BSONObjectID],
     *
     * @return
     */
-  def toCSV(): String = {
+  val toCSV: String = {
 
-    val columns = Service.csvTitle.map {
-      case Service.csvKey => Service.csvKey
+    val columns = Service.CsvTitle.map {
+      case Service.CsvKey => Service.CsvKey
       case "id" => if (_id.isEmpty) "" else _id.get.stringify
       case "description" => description.replaceAll(",", "")
       case "typeRequest" => typeRequest
@@ -79,9 +79,7 @@ object Service {
 
   private val keyCacheRequest = "cacheServiceRequest-"
 
-  def clearCache() {
-    Cache.remove(keyCacheRequest)
-  }
+  def clearCache() = Cache.remove(keyCacheRequest)
 
   implicit object ServicesBSONReader extends BSONDocumentReader[Services] {
     def read(doc: BSONDocument): Services = {
@@ -100,13 +98,13 @@ object Service {
   /**
     * Identity key for CSV file
     */
-  val csvKey = "service";
+  val CsvKey = "service"
 
   /**
     * Header of csvFile. Defines the column name and order.
     */
-  val csvTitle = List(
-    csvKey, "id", "description", "environmentName", "typeRequest", "httpMethod",
+  val CsvTitle = List(
+    CsvKey, "id", "description", "environmentName", "typeRequest", "httpMethod",
     "localTarget", "remoteTarget", "useMockGroup", "mockGroupId",
     "timeoutms", "recordContentData", "recordData"
   )
@@ -116,19 +114,15 @@ object Service {
     *
     * @return List of services, csv format
     */
-  def fetchCsv(): List[String] = {
-    val f = findAll.map(service => service.map(s => s.toCSV()))
-    Await result(f, 5.seconds)
-  }
+  def fetchCsv(): List[String] =
+    Await.result(findAll.map(service => service.map(_.toCSV)), 5.seconds)
 
   /**
     * Get the header as a csv string
     *
     * @return
     */
-  def fetchCsvHeader(): String = {
-    "#" + Service.csvTitle.mkString(",")
-  }
+  val CsvHeader = "#" + Service.CsvTitle.mkString(",")
 
   /**
     * Upload a csvLine => insert service & potential environment.
@@ -137,19 +131,19 @@ object Service {
     * @return nothing
     */
   def uploadCSV(csvLine: String): Either[ErrorUploadCsv, Boolean] = {
-
     val dataCsv = csvLine.split(",")
 
-    if (dataCsv.size != csvTitle.size)
-      throw new Exception("Please check csvFile, " + csvTitle.size + " fields required")
-
-    if (dataCsv(0) == csvKey) {
-      val uploadFuture = uploadEnvironment(dataCsv).flatMap {
-        uploaded => uploadService(dataCsv)
+    try {
+      if (dataCsv.size != CsvTitle.size) {
+        Left(ErrorUploadCsv("Please check csvFile, " + CsvTitle.size + " fields required"))
+      } else if (dataCsv.head == CsvKey) {
+        val uploadFuture = uploadEnvironment(dataCsv).flatMap(_ => uploadService(dataCsv))
+        Right(Await.result(uploadFuture, 10.seconds))
+      } else {
+        Left(ErrorUploadCsv(s"First column ${dataCsv.head} is not recognized as $CsvKey"))
       }
-      Right(Await.result(uploadFuture, 10.seconds))
-    } else {
-      Left(ErrorUploadCsv(s"First column ${dataCsv(0)} is not recognized as ${csvKey} "))
+    } catch {
+      case e : Exception => Left(ErrorUploadCsv(e.getMessage))
     }
 
   }
@@ -161,40 +155,30 @@ object Service {
     */
   private def uploadEnvironment(dataCsv: Array[String]): Future[Boolean] = {
 
-    val envS = dataCsv(csvTitle.indexOf("environmentName")).trim
-    val localTarget = dataCsv(csvTitle.indexOf("localTarget"))
+    val envS = dataCsv(CsvTitle.indexOf("environmentName")).trim
+    val localTarget = dataCsv(CsvTitle.indexOf("localTarget"))
     if (envS.isEmpty) {
-      throw new Exception(s"environmentName is mandatory when uploading the service ${localTarget}.")
+      throw new Exception(s"environmentName is mandatory when uploading the service $localTarget.")
     }
 
     def insertEnvironment(env: Environment, localTarget: String): Future[Boolean] = {
-      val u = Environment.insert(env)
-      u.map {
-        case res => {
-          Logger.info(s"Created new default environment ${env.name} for service ${localTarget}")
-          true
-        }
+      Environment.insert(env).map { _ =>
+        Logger.info(s"Created new default environment ${env.name} for service $localTarget")
+        true
       }
     }
 
     // Search the environment by its name
     val potentialEnvironmentF = Environment.findByName(envS, cached = false)
     potentialEnvironmentF.flatMap {
-      case Some(e) => {
+      case Some(e) =>
         // Environment exists, so we do nothing because we don't have any other info to update
-        Logger.info(s"Environment ${e.name} exists for service ${localTarget}")
+        Logger.info(s"Environment ${e.name} exists for service $localTarget")
         Future.successful(true)
-      }
-      case None => {
+      case None =>
         // Create a default environment with name
-        Logger.info(s"Environment ${envS} does not exist for service ${localTarget}")
-        val env = new Environment(
-          None,
-          envS,
-          List()
-        )
-        insertEnvironment(env, localTarget)
-      }
+        Logger.info(s"Environment $envS does not exist for service $localTarget")
+        insertEnvironment(Environment(_id = None, name = envS, groups = List()), localTarget)
     }
   }
 
@@ -207,45 +191,42 @@ object Service {
     */
   private def uploadService(dataCsv: Array[String]): Future[Boolean] = {
 
-    val id = dataCsv(csvTitle.indexOf("id"))
-    val typeRequest = dataCsv(csvTitle.indexOf("typeRequest"))
-    val localTarget = dataCsv(csvTitle.indexOf("localTarget"))
-    val environmentName = dataCsv(csvTitle.indexOf("environmentName"))
-    val httpMethod = dataCsv(csvTitle.indexOf("httpMethod"))
+    val id = dataCsv(CsvTitle.indexOf("id"))
+    val typeRequest = dataCsv(CsvTitle.indexOf("typeRequest"))
+    val localTarget = dataCsv(CsvTitle.indexOf("localTarget"))
+    val environmentName = dataCsv(CsvTitle.indexOf("environmentName"))
+    val httpMethod = dataCsv(CsvTitle.indexOf("httpMethod"))
     val potentialServiceF = if (id.isEmpty) {
       findByLocalTargetAndEnvironmentName(typeRequest, localTarget, environmentName, HttpMethod.valueOf(httpMethod))
     } else {
-      findById(dataCsv(csvTitle.indexOf("environmentName")), id)
+      findById(dataCsv(CsvTitle.indexOf("environmentName")), id)
     }
 
-    def insertService: Future[Boolean] = {
-      // Insert the service by generating the new id
-      val service = getServiceFromCSV(dataCsv).copy(_id = Some(BSONObjectID.generate))
-      val insert = Service.insert(service)
-      insert.map {
-        case res => Logger.info(s"Created new service ${localTarget} for ${environmentName} and ${typeRequest}/${httpMethod}")
-          true
+    def insertService(): Future[Boolean] = {
+      // When no id is given, generate one
+      // If id is provided keep it to insert service
+      val serviceFromCSV = getServiceFromCSV(dataCsv)
+      val service = serviceFromCSV._id match {
+        case Some(_) => serviceFromCSV
+        case None => serviceFromCSV.copy(_id = Some(BSONObjectID.generate))
+      }
+      Service.insert(service).map {res =>
+        Logger.info(s"Created new service $localTarget for $environmentName and $typeRequest/$httpMethod")
+        true
       }
     }
     def updateService(serviceToUpdate: Service): Future[Boolean] = {
       val service = getServiceFromCSV(dataCsv).copy(_id = serviceToUpdate._id)
-      val u = Service.update(service)
-      u.map {
-        case res => {
-          Logger.info(s"Updated existing service ${localTarget} for ${environmentName} and ${typeRequest}/${httpMethod}")
-          true
-        }
+      Service.update(service).map { res =>
+        Logger.info(s"Updated existing service $localTarget for $environmentName and $typeRequest/$httpMethod")
+        true
+
       }
     }
 
     potentialServiceF.flatMap {
-      case Some(e) => {
-        if (e == null) insertService else updateService(e)
-      }
-      case None => {
-        // Create a new service
-        insertService
-      }
+      case Some(null) | None => insertService()
+      case Some(e) ⇒ updateService(e)
     }
   }
 
@@ -258,45 +239,52 @@ object Service {
     * @return
     */
   private def getServiceFromCSV(dataCsv: Array[String]) = {
-    val idRaw = dataCsv(csvTitle.indexOf("id"))
+    val idRaw = dataCsv(CsvTitle.indexOf("id"))
     val id = if (idRaw.trim.isEmpty) None else Some(BSONObjectID(idRaw))
 
-    val descriptionRaw = dataCsv(csvTitle.indexOf("description"))
+    val descriptionRaw = dataCsv(CsvTitle.indexOf("description"))
     val description = descriptionRaw.trim
 
-    val environmentNameRaw = dataCsv(csvTitle.indexOf("environmentName"))
+    val environmentNameRaw = dataCsv(CsvTitle.indexOf("environmentName"))
     val environmentName = if (environmentNameRaw.trim.isEmpty) throw new Exception("environmentName is required")
     else Some(environmentNameRaw.trim)
 
-    val typeRequestRaw = dataCsv(csvTitle.indexOf("typeRequest"))
+    val typeRequestRaw = dataCsv(CsvTitle.indexOf("typeRequest"))
     val typeRequest = if (Set(REST, SOAP).contains(typeRequestRaw.trim)) typeRequestRaw.trim
     else throw new Exception(s"typeRequest should be either ${REST} or ${SOAP}")
 
-    val httpMethodRaw = dataCsv(csvTitle.indexOf("httpMethod"))
-    val httpMethod = if (httpMethodRaw.trim.isEmpty) throw new Exception("httpMethod is required")
-    else httpMethodRaw.trim
+    val httpMethod = if (typeRequest == SOAP) {
+        // When SOAP webservices, typeRequest has to be POST
+        "POST"
+      } else {
+        val httpMethodRaw = dataCsv(CsvTitle.indexOf("httpMethod"))
+        if (httpMethodRaw.trim.nonEmpty)
+          httpMethodRaw.trim
+        else
+          throw new Exception("httpMethod is required")
+      }
 
-    val localTargetRaw = dataCsv(csvTitle.indexOf("localTarget"))
+    val localTargetRaw = dataCsv(CsvTitle.indexOf("localTarget"))
     val localTarget = if (localTargetRaw.trim.isEmpty) throw new Exception("localTarget is required")
     else localTargetRaw.trim
 
-    val remoteTargetRaw = dataCsv(csvTitle.indexOf("remoteTarget"))
+    val remoteTargetRaw = dataCsv(CsvTitle.indexOf("remoteTarget"))
     val remoteTarget = if (remoteTargetRaw.trim.isEmpty) throw new Exception("remoteTarget is required")
     else remoteTargetRaw.trim
 
-    val useMockGroupRaw = dataCsv(csvTitle.indexOf("useMockGroup"))
+    val useMockGroupRaw = dataCsv(CsvTitle.indexOf("useMockGroup"))
     val useMockGroup = useMockGroupRaw.trim == "true"
 
-    val mockGroupIdRaw = dataCsv(csvTitle.indexOf("mockGroupId"))
+    val mockGroupIdRaw = dataCsv(CsvTitle.indexOf("mockGroupId"))
     val mockGroupId = if (mockGroupIdRaw.trim.isEmpty) None else Some(mockGroupIdRaw.trim)
 
-    val timeoutmsRaw = dataCsv(csvTitle.indexOf("timeoutms"))
+    val timeoutmsRaw = dataCsv(CsvTitle.indexOf("timeoutms"))
     val timeoutms = UtilNumbers.toInt(timeoutmsRaw.trim).getOrElse(5000)
 
-    val recordContentDataRaw = dataCsv(csvTitle.indexOf("recordContentData"))
+    val recordContentDataRaw = dataCsv(CsvTitle.indexOf("recordContentData"))
     val recordContentData = recordContentDataRaw.trim == "true"
 
-    val recordDataRaw = dataCsv(csvTitle.indexOf("recordData"))
+    val recordDataRaw = dataCsv(CsvTitle.indexOf("recordData"))
     val recordData = recordDataRaw.trim == "true"
 
     Service(id, description, typeRequest, httpMethod, localTarget, remoteTarget, timeoutms, recordContentData, recordData, useMockGroup, mockGroupId, environmentName)

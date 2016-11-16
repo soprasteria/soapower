@@ -22,12 +22,12 @@
 <div class="well">
     <p>Upload a CSV file containing Environments and Services data. Be aware of the following rules :</p>
     <ul>
-        <li>You can download a file containing current data with "Download configuration" button</li>
-        <li>Uploading a file only creates or updates existing data</li>
-        <li>An environment and a service are identified by their ids</li>
-        <li>If the id is empty, the environment and the service will be either created or updated depending on the other data</li>
-        <li>If the id is not empty and exist in db, it will be updated. If it does not, it will be created</li>
-        <li>Uploading stops and fail at first error occurred. Fix the error(s) and upload again</li>
+        <li>You can download a file containing current data with "Download configuration" button.</li>
+        <li>Uploading a file only creates or updates existing data. It does not delete anything.</li>
+        <li>An environment and a service are uniquely identified by their ids.</li>
+        <li>If the id is empty, the environment and the service will be either created or updated depending on other data (ex: name for the environment)</li>
+        <li>If the id is not empty and exist in db, the entity will be updated. If it does not, the entity will be created with this id</li>
+        <li>Uploading will iterate through every line and compute a report with all encountered errors. If any error, you have to fix them and upload the file again</li>
     </ul>
 </div>
 

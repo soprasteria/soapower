@@ -31,9 +31,9 @@ case class Environment(_id: Option[BSONObjectID],
     *
     * @return
     */
-  def toCSV(): String = {
-    val columns = Environment.csvTitle.map {
-      case Environment.csvKey => Environment.csvKey
+  def toCSV: String = {
+    val columns = Environment.csvTitle.collect {
+      case Environment.CsvKey => Environment.CsvKey
       case "id" => if (_id.isEmpty) "" else _id.get.stringify
       case "name" => name
       case "groupsName" => groups.mkString(";")
@@ -106,30 +106,26 @@ object Environment {
   /**
     * Identity key for CSV file
     */
-  val csvKey = "environment"
+  val CsvKey = "environment"
 
   /**
     * Header of csvFile. Defines the column name and order.
     */
   val csvTitle = List(
-    csvKey, "id", "groupsName", "name", "hourRecordContentDataMin",
+    CsvKey, "id", "groupsName", "name", "hourRecordContentDataMin",
     "hourRecordContentDataMax", "nbDayKeepContentData", "nbDayKeepAllData",
     "recordContentData", "recordData"
   )
 
-  def fetchCsvHeader(): String = {
-    "#" + Environment.csvTitle.mkString(",")
-  }
+  val CsvHeader = "#" + Environment.csvTitle.mkString(",")
 
   /**
     * Get All environements, csv format.
     *
     * @return List of Environements, csv format
     */
-  def fetchCsv(): List[String] = {
-    val f = findAll.map(environments => environments.map(env => env.toCSV()))
-    Await result(f, 5.seconds)
-  }
+  def fetchCsv(): List[String] =
+  Await.result(findAll().map(environments => environments.map(_.toCSV)), 5.seconds)
 
   /**
     * Upload a csvLine => insert environment.
@@ -138,18 +134,18 @@ object Environment {
     * @return nothing
     */
   def uploadCSV(csvLine: String): Either[ErrorUploadCsv, Boolean] = {
-
     val dataCsv = csvLine.split(",")
-
-    if (dataCsv.size != csvTitle.size) {
-      throw new Exception("Please check csvFile, " + csvTitle.size + " fields required")
-    }
-
-    if (dataCsv(0) == csvKey) {
-      val uploadFuture = uploadEnvironment(dataCsv)
-      Right(Await.result(uploadFuture, 10.seconds))
-    } else {
-      Left(ErrorUploadCsv(s"First column ${dataCsv(0)} is not recognized as ${csvKey} "))
+    try {
+      if (dataCsv.size != csvTitle.size) {
+        Left(ErrorUploadCsv("Please check csvFile, " + csvTitle.size + " fields required"))
+      } else if (dataCsv.head == CsvKey) {
+        val uploadFuture = uploadEnvironment(dataCsv)
+        Right(Await.result(uploadFuture, 10.seconds))
+      } else {
+        Left(ErrorUploadCsv(s"First column ${dataCsv.head} is not recognized as $CsvKey"))
+      }
+    } catch {
+      case e : Exception => Left(ErrorUploadCsv(e.getMessage))
     }
   }
 
@@ -161,23 +157,24 @@ object Environment {
     */
   private def uploadEnvironment(dataCsv: Array[String]): Future[Boolean] = {
 
-    def insertEnvironment: Future[Boolean] = {
-      // Insert the service by generating the new id
-      val env = getEnvironmentFromCSV(dataCsv).copy(_id = Some(BSONObjectID.generate))
-      val insert = Environment.insert(env)
-      insert.map {
-        case res => Logger.info(s"Created new environment ${env.name}")
-          true
+    def insertEnvironment() = {
+      // When no id is given, generate one
+      // If id is provided keep it to insert environment
+      val envFromCSV = getEnvironmentFromCSV(dataCsv)
+      val env = envFromCSV._id match {
+        case Some(_) => envFromCSV
+        case None => envFromCSV.copy(_id = Some(BSONObjectID.generate))
+      }
+      Environment.insert(env).map { res =>
+        Logger.info(s"Created new environment ${env.name}")
+        true
       }
     }
-    def updateEnvironment(envToUpdate: Environment): Future[Boolean] = {
+    def updateEnvironment(envToUpdate: Environment) = {
       val env = getEnvironmentFromCSV(dataCsv).copy(_id = envToUpdate._id)
-      val u = Environment.update(env)
-      u.map {
-        case res => {
-          Logger.info(s"Updated existing environment ${env.name} (id=${env._id})")
-          true
-        }
+      Environment.update(env).map { res =>
+        Logger.info(s"Updated existing environment ${env.name} (id=${env._id})")
+        true
       }
     }
 
@@ -191,13 +188,8 @@ object Environment {
     }
 
     potentialEnvironmentF.flatMap {
-      case Some(e) => {
-        if (e == null) insertEnvironment else updateEnvironment(e)
-      }
-      case None => {
-        // Create a new environment
-        insertEnvironment
-      }
+      case Some(null) | None => insertEnvironment()
+      case Some(e) => updateEnvironment(e)
     }
 
   }
@@ -217,6 +209,7 @@ object Environment {
     val name = if (nameRaw.trim.isEmpty) throw new Exception("name is required") else nameRaw.trim
 
     val groupsNameRaw = dataCsv(csvTitle.indexOf("groupsName"))
+    // Groups without duplicates (.toSet)
     val groups = groupsNameRaw.split(";").map(group => group.trim).toSet.toList
 
     val hourRecordContentDataMinRaw = dataCsv(csvTitle.indexOf("hourRecordContentDataMin"))
@@ -294,16 +287,16 @@ object Environment {
     * Retrieve an Environment from name.
     */
   def findByName(name: String, cached: Boolean = true): Future[Option[Environment]] = {
-    def find: Future[Option[Environment]] = {
+    def find(): Future[Option[Environment]] = {
       val query = BSONDocument("name" -> name)
       collection.find(query).one[Environment]
     }
     if (cached) {
       Cache.getOrElse(keyCacheByName + name) {
-        find
+        find()
       }
     } else {
-      find
+      find()
     }
 
   }
@@ -322,7 +315,7 @@ object Environment {
     }) {
       throw new Exception("Environment with name " + environment.name.trim + " already exist")
     }
-    clearCache
+    clearCache()
     collection.insert(environment)
   }
 
@@ -354,7 +347,7 @@ object Environment {
         "recordData" -> environment.recordData,
         "groups" -> environment.groups)
     )
-    clearCache
+    clearCache()
     collection.update(selector, modifier)
   }
 
@@ -377,7 +370,7 @@ object Environment {
   /**
     * Return a list of all environments.
     */
-  def findAll: Future[List[Environment]] = {
+  def findAll(): Future[List[Environment]] = {
     collection.
       find(BSONDocument()).
       sort(BSONDocument("name" -> 1)).
@@ -390,7 +383,7 @@ object Environment {
     */
   def findInGroups(groups: String): Future[List[Environment]] = {
     if ("all".equals(groups)) {
-      return findAll
+      return findAll()
     }
     val find = BSONDocument("groups" -> BSONDocument("$in" -> groups.split(',')))
     collection.
@@ -405,7 +398,7 @@ object Environment {
     */
   def options = {
     Cache.getOrElse(keyCacheAllOptions) {
-      val f = findAll.map(environments => environments.map(e => (e._id.get.stringify, e.name)))
+      val f = findAll().map(environments => environments.map(e => (e._id.get.stringify, e.name)))
       sortEnvs(Await result(f, 5.seconds))
     }
 
@@ -477,7 +470,7 @@ object Environment {
     val gcal = new GregorianCalendar
     val today = new GregorianCalendar(gcal.get(Calendar.YEAR), gcal.get(Calendar.MONTH), gcal.get(Calendar.DATE))
 
-    Environment.findAll.map(environments => environments.map(
+    Environment.findAll().map(environments => environments.map(
       env => {
         var nbDay = 100
         val maxDate = new GregorianCalendar

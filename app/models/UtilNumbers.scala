@@ -10,6 +10,7 @@ object UtilNumbers {
   /**
     * Convert string to optional int.
     * If s cannot be converted to Int, this method returns None
+    *
     * @param s the string to convert
     * @return
     */

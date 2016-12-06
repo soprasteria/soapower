@@ -88,7 +88,7 @@ object Streams {
   val cpu = new models.CPU()
 
   val getCPU = Enumerator.generateM({
-    Promise.timeout(Some((cpu.getCpuUsage() * 1000).round / 10.0 + ":cpu"), timeRefreshMillis, TimeUnit.MILLISECONDS)
+    Promise.timeout(Some((cpu.cpuUsage() * 1000).round / 10.0 + ":cpu"), timeRefreshMillis, TimeUnit.MILLISECONDS)
   })
 
   val getTotalMemory = Enumerator.generateM({

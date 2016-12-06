@@ -95,7 +95,7 @@ object Stats extends Controller {
             analysis.dateAndAvg.map(
               d => {
                 val t = treshold.getOrElse(ServiceAction.getThreshold(analysis.serviceAction, groupName.split(',').toList))
-                x += "<testcase classname='" + groupName + "." + analysis.environment + "' name='" + analysis.serviceAction + " at " + UtilDate.getDateFormatees(new Date(d._1)) + "' time='" + (d._2.toFloat / 1000) + "'>"
+                x += "<testcase classname='" + groupName + "." + analysis.environment + "' name='" + analysis.serviceAction + " at " + UtilDate.formatedDate(new Date(d._1)) + "' time='" + (d._2.toFloat / 1000) + "'>"
                 if (d._2.toLong > t) {
                   x += "<failure type='TooSlowException'> Response Time > Threshold: " + d._2.toFloat + " > " + t + " "
                   if (t <= -1) x += "Threshold not configured on Soapower"

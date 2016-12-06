@@ -57,7 +57,7 @@ object Search extends Controller {
     RequestData.loadRequest(id).map {
       tuple => tuple match {
         case Some(doc: BSONDocument) => {
-          Ok(UtilConvert.headersToString(doc.getAs[Map[String, String]]("requestHeaders").get))
+          Ok(UtilConvert.headersToString(doc.getAs[Map[String, String]]("requestHeaders")))
         }
         case None =>
           NotFound("Request not found")
@@ -75,7 +75,7 @@ object Search extends Controller {
     RequestData.loadResponse(id).map {
       tuple => tuple match {
         case Some(doc: BSONDocument) => {
-          Ok(UtilConvert.headersToString(doc.getAs[Map[String, String]]("responseHeaders").get))
+          Ok(UtilConvert.headersToString(doc.getAs[Map[String, String]]("responseHeaders")))
         }
         case None =>
           NotFound("Response not found")

@@ -2,23 +2,18 @@ package models
 
 object UtilConvert {
 
-  def headersToString(headers: Map[String, String]): String = {
-    if (headers != null) {
-      headers.foldLeft("") {
-        (string, header) => string + header._1 + " -> " + header._2 + "\n"
-      }
-    } else {
-      ""
-    }
+  private val lineSeparator = "\n"
+  private val keyValueSeparator = " -> "
+
+  def headersToString(headers: Option[Map[String, String]]): String = headers match {
+    case Some(null) | None => ""
+    case Some(actualHeaders) => actualHeaders.map { case (k, v) => k + keyValueSeparator + v }.mkString(lineSeparator)
   }
 
-  def headersFromString(headersAsStr: String): Map[String, String] = {
-    def headers = headersAsStr.split("\n").collect {
-      case header =>
-        val parts = header.split(" -> ")
-        (parts(0), parts.tail.mkString(""))
-    }
-    headers.toMap
-  }
+  def headersFromString(headersAsStr: String): Map[String, String] =
+    headersAsStr.split(lineSeparator).map { kv =>
+      val splitKv = kv.split(keyValueSeparator, 2)
+      splitKv.head -> splitKv.tail.head
+    }.toMap
 
 }

@@ -12,7 +12,7 @@
 # ./soapower.ctl.sh configtest : check the configuration
 # ./soapower.ctl.sh status     : display soapower status (port regardless)
 # 
-#  YOU DOESN'T NEED TO MODIFY THIS SCRIPT.
+#  YOU DON'T NEED TO MODIFY THIS SCRIPT.
 # 
 # 
 #############################################################

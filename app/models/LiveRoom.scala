@@ -1,18 +1,17 @@
 package models
 
 import akka.actor._
-import scala.concurrent.duration._
 
+import scala.concurrent.duration._
 import play.api._
 import play.api.libs.json._
 import play.api.libs.iteratee._
 import play.api.libs.concurrent._
-
 import akka.util.Timeout
 import akka.pattern.ask
-
 import play.api.Play.current
 import play.api.libs.concurrent.Execution.Implicits._
+import play.api.mvc.Result
 
 object Robot {
 
@@ -73,7 +72,7 @@ object LiveRoom {
     default ! ChangeCriterias(username, criteria)
   }
 
-  def join(username: String, criterias: Criterias): scala.concurrent.Future[(Iteratee[JsValue, _], Enumerator[JsValue])] = {
+  def join(username: String, criterias: Criterias): scala.concurrent.Future[Either[Result, (Iteratee[JsValue, _], Enumerator[JsValue])]] = {
 
     (default ? Join(username, criterias)).map {
       case Connected(enumerator) =>
@@ -85,7 +84,7 @@ object LiveRoom {
           _ =>
             default ! Quit(username)
         }
-        (iteratee, enumerator)
+        Right(iteratee, enumerator)
 
       case CannotConnect(error) =>
         // Connection error
@@ -94,7 +93,7 @@ object LiveRoom {
         // Send an error and close the socket
         val enumerator = Enumerator[JsValue](JsObject(Seq("error" -> JsString(error)))).andThen(Enumerator.enumInput(Input.EOF))
 
-        (iteratee, enumerator)
+        Right(iteratee, enumerator)
     }
   }
 }

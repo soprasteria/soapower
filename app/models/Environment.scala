@@ -1,21 +1,21 @@
 package models
 
-import play.api.Play.current
-import play.api.cache._
 import java.util.{Calendar, GregorianCalendar}
 
-import play.modules.reactivemongo.ReactiveMongoPlugin
+import play.api.Logger
+import play.api.Play.current // This should be deprecated in favor of DI
+import play.api.cache._
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.json._
+import play.modules.reactivemongo.{MongoController, ReactiveMongoApi, ReactiveMongoComponents}
+import play.modules.reactivemongo.json._
+import reactivemongo.api.collections.bson.BSONCollection
 import reactivemongo.api.indexes.{Index, IndexType}
 import reactivemongo.bson._
-
-import scala.concurrent.{Await, Future}
-import scala.concurrent.duration._
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import reactivemongo.core.commands.RawCommand
-import play.api.Logger
-import reactivemongo.api.collections.default.BSONCollection
-import play.modules.reactivemongo.json.BSONFormats._
+
+import scala.concurrent.duration._
+import scala.concurrent.{Await, Future}
 
 case class Environment(_id: Option[BSONObjectID],
                        name: String,
@@ -54,12 +54,12 @@ object ModePurge extends Enumeration {
 }
 
 
-object Environment {
-
+object Environment extends MongoController with ReactiveMongoComponents {
+  lazy val reactiveMongoApi = current.injector.instanceOf[ReactiveMongoApi]
   /*
    * Collection MongoDB
    */
-  def collection: BSONCollection = ReactiveMongoPlugin.db.collection[BSONCollection]("environments")
+  def collection: BSONCollection = db.collection[BSONCollection]("environments")
 
   def ensureIndexes() {
     Logger.info("Collection environments, ensure index")
@@ -145,7 +145,7 @@ object Environment {
         Left(ErrorUploadCsv(s"First column ${dataCsv.head} is not recognized as $CsvKey"))
       }
     } catch {
-      case e : Exception => Left(ErrorUploadCsv(e.getMessage))
+      case e: Exception => Left(ErrorUploadCsv(e.getMessage))
     }
   }
 

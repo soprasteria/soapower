@@ -1,21 +1,19 @@
 package models
 
-import com.ning.http.client.{AsyncHttpClient, FluentCaseInsensitiveStringsMap}
-import com.ning.http.client.providers.netty.NettyResponse
-import scala.concurrent.Future
-import scala.concurrent.Await
-import scala.concurrent.duration._
-import play.api.libs.ws._
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import play.api.libs.concurrent._
-import play.core.utils.CaseInsensitiveOrdered
-import play.Logger
-import collection.immutable.TreeMap
-import play.api.http._
-import java.io.StringWriter
-import java.io.PrintWriter
-import play.api.Play.current
+import java.io.{PrintWriter, StringWriter}
+
+import com.ning.http.client.FluentCaseInsensitiveStringsMap
+import com.ning.http.client.providers.netty.response.NettyResponse
 import org.jboss.netty.handler.codec.http.HttpMethod
+import play.Logger
+import play.api.Play.current
+import play.api.http._
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
+import play.api.libs.ws._
+
+import scala.collection.immutable.TreeMap
+import scala.concurrent.{Await, Future}
+import scala.concurrent.duration._
 
 object Client {
   private val DEFAULT_NO_SOAPACTION = "Soapower_NoSoapAction"
@@ -99,10 +97,11 @@ class Client(pService: Service, environmentName: String, sender: String, content
   }
 
   /**
-   * Send a request to a REST service
-   * @param correctUrl
-   * @param query
-   */
+    * Send a request to a REST service
+    *
+    * @param correctUrl
+    * @param query
+    */
   def sendRestRequestAndWaitForResponse(method: HttpMethod, correctUrl: String, query: Map[String, String]) {
     if (Logger.isDebugEnabled) {
       Logger.debug("RemoteTarget (rest) " + service.remoteTarget)
@@ -156,8 +155,8 @@ class Client(pService: Service, environmentName: String, sender: String, content
   }
 
   /**
-   * Send a request to a SOAP service
-   */
+    * Send a request to a SOAP service
+    */
   def sendSoapRequestAndWaitForResponse() {
     if (Logger.isDebugEnabled) {
       Logger.debug("RemoteTarget (soap)" + service.remoteTarget)
@@ -229,10 +228,11 @@ class Client(pService: Service, environmentName: String, sender: String, content
   }
 
   /**
-   * If content is null or empty, return "[null or empty]"
-   * @param content a string
-   * @return [null or empty] or the content if not null (or empty!)
-   */
+    * If content is null or empty, return "[null or empty]"
+    *
+    * @param content a string
+    * @return [null or empty] or the content if not null (or empty!)
+    */
   private def checkNullOrEmpty(content: String): String = {
     if (content == null || content.isEmpty) "[null or empty]" else content
   }
@@ -309,7 +309,7 @@ class ClientResponse(wsResponse: WSResponse = null, val responseTimeInMillis: Lo
   private def ningHeadersToMap(headersNing: FluentCaseInsensitiveStringsMap) = {
     import scala.collection.JavaConverters._
     val res = mapAsScalaMapConverter(headersNing).asScala.map(e => e._1 -> e._2.asScala.toSeq).toMap
-    TreeMap(res.toSeq: _*)(CaseInsensitiveOrdered)
+    TreeMap(res.toSeq: _*)(OrderUtils.CaseInsensitiveOrdered)
   }
 }
 

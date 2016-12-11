@@ -1,23 +1,22 @@
 package models
 
-import play.api.Play.current
-import reactivemongo.bson._
-import play.modules.reactivemongo.ReactiveMongoPlugin
-import play.modules.reactivemongo.json.BSONFormats._
-import play.api.libs.json.Json
-import reactivemongo.bson.BSONString
-import scala.Some
-import reactivemongo.api.collections.default.BSONCollection
-import scala.concurrent.{Await, Future}
-import scala.concurrent.duration._
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import play.Logger
-import scala.util.Success
-import scala.util.Failure
-import org.joda.time.DateTime
 import java.util.Date
-import scala.collection.mutable.ListBuffer
+
+import org.joda.time.DateTime
+import play.api.Play.current // should be deprecated in favor of DI
+import play.Logger
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
+import play.api.libs.json.Json
+import play.modules.reactivemongo.{MongoController, ReactiveMongoApi, ReactiveMongoComponents}
+import play.modules.reactivemongo.json._
+import reactivemongo.api.collections.bson.BSONCollection
+import reactivemongo.bson.{BSONString, _}
 import reactivemongo.core.commands.RawCommand
+
+import scala.collection.mutable.ListBuffer
+import scala.concurrent.duration._
+import scala.concurrent.{Await, Future}
+import scala.util.{Failure, Success}
 
 case class Stat(_id: Option[BSONObjectID],
                 groups: List[String],
@@ -32,13 +31,14 @@ case class Stat(_id: Option[BSONObjectID],
 
 }
 
-object Stat {
+object Stat extends MongoController with ReactiveMongoComponents {
+  lazy val reactiveMongoApi = current.injector.instanceOf[ReactiveMongoApi]
 
   /*
    * Collection MongoDB
    *
    */
-  def collection: BSONCollection = ReactiveMongoPlugin.db.collection[BSONCollection]("statistics")
+  def collection: BSONCollection = db.collection[BSONCollection]("statistics")
 
   implicit val statsFormat = Json.format[Stat]
 
@@ -69,9 +69,10 @@ object Stat {
   }
 
   /**
-   * Insert stat
-   * @param stat
-   */
+    * Insert stat
+    *
+    * @param stat
+    */
   def insert(stat: Stat) = {
     val exists = findByGroupsEnvirServiceDate(stat)
     exists.onComplete {
@@ -95,10 +96,11 @@ object Stat {
   }
 
   /**
-   * Find a stat using groups, environmentName and serviceaction
-   * @param stat
-   * @return
-   */
+    * Find a stat using groups, environmentName and serviceaction
+    *
+    * @param stat
+    * @return
+    */
   def findByGroupsEnvirServiceDate(stat: Stat): Future[Option[Stat]] = {
     val find = BSONDocument("groups" -> stat.groups, "environmentName" -> stat.environmentName, "serviceAction" -> stat.serviceAction, "atDate" -> BSONDocument("$eq" -> BSONDateTime(stat.atDate.toDate.getTime)))
     collection.find(find).one[Stat]
@@ -107,13 +109,14 @@ object Stat {
   case class PageStat(groups: List[String], environmentName: String, serviceAction: String, avgInMillis: Long, treshold: Long)
 
   /**
-   * Return a page of stats
-   * @param groups
-   * @param environmentName
-   * @param minDate
-   * @param maxDate
-   * @return a list of (groups, environmentName, serviceaction, avgTime, Treshold)
-   */
+    * Return a page of stats
+    *
+    * @param groups
+    * @param environmentName
+    * @param minDate
+    * @param maxDate
+    * @return a list of (groups, environmentName, serviceaction, avgTime, Treshold)
+    */
   def find(groups: String, environmentName: String, minDate: Date, maxDate: Date): Future[List[PageStat]] = {
 
     // First, we retrieve a map of all serviceactions and their treshold, organized by name and groups
@@ -184,7 +187,7 @@ object Stat {
       )
 
     // Perform the query
-    val query = ReactiveMongoPlugin.db.command(RawCommand(command))
+    val query = db.command(RawCommand(command))
     query.map {
       list =>
         // Decode the result
@@ -239,14 +242,15 @@ object Stat {
   case class AnalysisEntity(groups: List[String], environment: String, serviceAction: String, dateAndAvg: List[(Long, Long)])
 
   /**
-   * Response times using mongoDB aggregation framework
-   * @param groups
-   * @param environmentName
-   * @param serviceAction
-   * @param minDate
-   * @param maxDate
-   * @return
-   */
+    * Response times using mongoDB aggregation framework
+    *
+    * @param groups
+    * @param environmentName
+    * @param serviceAction
+    * @param minDate
+    * @param maxDate
+    * @return
+    */
   def findResponseTimes(groups: String, environmentName: String, serviceAction: String, minDate: Date, maxDate: Date): Future[List[AnalysisEntity]] = {
     var matchQuery = BSONDocument()
     var groupQuery = BSONDocument()
@@ -299,7 +303,7 @@ object Stat {
         )
       )
 
-    ReactiveMongoPlugin.db.command(RawCommand(command)).map {
+    db.command(RawCommand(command)).map {
       list =>
         val resList = ListBuffer.empty[AnalysisEntity]
         list.elements.foreach {
@@ -353,5 +357,6 @@ object Stat {
         resList.toList
     }
   }
+
 }
 

@@ -1,29 +1,30 @@
 package models
 
-import play.api.Play.current
+import play.api.Play.current // should be deprecated in favor of DI
 import play.api.cache._
-
-import play.modules.reactivemongo.ReactiveMongoPlugin
+import play.modules.reactivemongo.{MongoController, ReactiveMongoApi, ReactiveMongoComponents}
 import play.api.libs.json._
 import reactivemongo.bson._
+
 import scala.concurrent.{Await, Future}
 import play.modules.reactivemongo.json.BSONFormats._
+
 import scala.concurrent.duration._
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import reactivemongo.core.commands.RawCommand
 import play.api.Logger
-import reactivemongo.api.collections.default.BSONCollection
+import reactivemongo.api.collections.bson.BSONCollection
 
 case class MockGroup(_id: Option[BSONObjectID],
                      name: String,
                      groups: List[String])
 
-object MockGroup {
-
+object MockGroup extends MongoController with ReactiveMongoComponents {
+  lazy val reactiveMongoApi = current.injector.instanceOf[ReactiveMongoApi]
   /*
    * Collection MongoDB
    */
-  def collection: BSONCollection = ReactiveMongoPlugin.db.collection[BSONCollection]("mockGroups")
+  def collection: BSONCollection = db.collection[BSONCollection]("mockGroups")
 
   implicit val mockGroupFormat = Json.format[MockGroup]
 

@@ -1,30 +1,32 @@
 package models
 
-import play.api.Play.current
 
-import play.modules.reactivemongo.ReactiveMongoPlugin
 import play.api.libs.json._
-import reactivemongo.api.indexes.{IndexType, Index}
+import play.modules.reactivemongo.{MongoController, ReactiveMongoApi, ReactiveMongoComponents}
+import play.modules.reactivemongo.json._
+import reactivemongo.api.indexes.{Index, IndexType}
 import reactivemongo.bson._
+
 import scala.concurrent.{Await, Future}
-import play.modules.reactivemongo.json.BSONFormats._
-import scala.concurrent.duration._
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import reactivemongo.core.commands.{Count, RawCommand}
 import play.api.Logger
-import reactivemongo.api.collections.default.BSONCollection
+import play.api.Play.current // should be deprecated in favor of DI
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
+import reactivemongo.api.collections.bson.BSONCollection
+import reactivemongo.core.commands.{Count, RawCommand}
+
+import scala.concurrent.duration._
 
 case class ServiceAction(_id: Option[BSONObjectID],
                          name: String,
                          groups: List[String],
                          thresholdms: Int)
 
-object ServiceAction {
-
+object ServiceAction extends MongoController with ReactiveMongoComponents {
+  lazy val reactiveMongoApi = current.injector.instanceOf[ReactiveMongoApi]
   /*
    * Collection MongoDB
    */
-  def collection: BSONCollection = ReactiveMongoPlugin.db.collection[BSONCollection]("serviceActions")
+  def collection: BSONCollection = db.collection[BSONCollection]("serviceActions")
 
   def ensureIndexes() {
     Logger.info("Collection serviceActions, ensure index")
@@ -54,53 +56,55 @@ object ServiceAction {
   }
 
   /**
-   * Retrieve an ServiceAction from id.
-   */
+    * Retrieve an ServiceAction from id.
+    */
   def findById(objectId: BSONObjectID): Future[Option[ServiceAction]] = {
     val query = BSONDocument("_id" -> objectId)
     collection.find(query).one[ServiceAction]
   }
 
   /**
-   * Retrieve a ServiceAction from name and groups
-   * @param name
-   * @param groups
-   * @return
-   */
+    * Retrieve a ServiceAction from name and groups
+    *
+    * @param name
+    * @param groups
+    * @return
+    */
   def findByNameAndGroups(name: String, groups: List[String]): Future[Option[ServiceAction]] = {
     val query = BSONDocument("name" -> BSONString(name), "groups" -> groups)
     collection.find(query).one[ServiceAction]
   }
 
-  def getThreshold(name: String, groups: List[String]) : Long = {
+  def getThreshold(name: String, groups: List[String]): Long = {
     val f = findByNameAndGroups(name, groups)
     val s = Await.result(f, 2.seconds)
-      if (s.isDefined) {
-        s.get.thresholdms.toLong
-      } else {
-        -1
-      }
+    if (s.isDefined) {
+      s.get.thresholdms.toLong
+    } else {
+      -1
+    }
   }
 
   /**
-   * Count ServiceAction by name. Just to check if serviceAction already exist in collection.
-   * @return 0 ou 1
-   */
+    * Count ServiceAction by name. Just to check if serviceAction already exist in collection.
+    *
+    * @return 0 ou 1
+    */
   def countByName(name: String): Int = {
-    val futureCount = ReactiveMongoPlugin.db.command(Count(collection.name, Some(BSONDocument("name" -> BSONString(name)))))
+    val futureCount = db.command(Count(collection.name, Some(BSONDocument("name" -> BSONString(name)))))
     Await.result(futureCount.map(c => c), 1.seconds)
   }
 
   def countByNameAndGroups(name: String, groups: List[String]): Int = {
-    val futureCount = ReactiveMongoPlugin.db.command(Count(collection.name, Some(BSONDocument("name" -> BSONString(name), "groups" -> groups))))
+    val futureCount = db.command(Count(collection.name, Some(BSONDocument("name" -> BSONString(name), "groups" -> groups))))
     Await.result(futureCount.map(c => c), 1.seconds)
   }
 
   /**
-   * Insert a new serviceAction.
-   *
-   * @param serviceAction The serviceAction values.
-   */
+    * Insert a new serviceAction.
+    *
+    * @param serviceAction The serviceAction values.
+    */
   def insert(serviceAction: ServiceAction) = {
     if (Await.result(findByNameAndGroups(serviceAction.name.trim, serviceAction.groups).map(e => e), 1.seconds).isDefined) {
       throw new Exception("ServiceAction with name " + serviceAction.name.trim + " and groups " + serviceAction.groups.toString + " already exist")
@@ -109,10 +113,10 @@ object ServiceAction {
   }
 
   /**
-   * Update a serviceAction.
-   *
-   * @param serviceAction The serviceAction values.
-   */
+    * Update a serviceAction.
+    *
+    * @param serviceAction The serviceAction values.
+    */
   def update(serviceAction: ServiceAction) = {
     val selector = BSONDocument("_id" -> serviceAction._id)
     val modifier = BSONDocument(
@@ -123,18 +127,18 @@ object ServiceAction {
   }
 
   /**
-   * Delete a serviceAction.
-   *
-   * @param id Id of the serviceAction to delete.
-   */
+    * Delete a serviceAction.
+    *
+    * @param id Id of the serviceAction to delete.
+    */
   def delete(id: String) = {
     val objectId = BSONObjectID.apply(id)
     collection.remove(BSONDocument("_id" -> objectId))
   }
 
   /**
-   * Return a list of all serviceActions.
-   */
+    * Return a list of all serviceActions.
+    */
   def findAll: Future[List[ServiceAction]] = {
     collection.
       find(BSONDocument()).
@@ -144,8 +148,8 @@ object ServiceAction {
   }
 
   /**
-   * Return a list of all serviceActions in some groups.
-   */
+    * Return a list of all serviceActions in some groups.
+    */
   def findInGroups(groups: String): Future[List[ServiceAction]] = {
     if ("all".equals(groups)) return findAll
     val find = BSONDocument("groups" -> BSONDocument("$in" -> groups.split(',')))
@@ -168,10 +172,10 @@ object ServiceAction {
   }
 
   /**
-   * Find all distinct groups in serviceActions collections.
-   *
-   * @return all distinct groups
-   */
+    * Find all distinct groups in serviceActions collections.
+    *
+    * @return all distinct groups
+    */
   def findAllGroups(): Future[BSONDocument] = {
     val command = RawCommand(BSONDocument("distinct" -> collection.name, "key" -> "groups"))
     collection.db.command(command) // result is Future[BSONDocument]

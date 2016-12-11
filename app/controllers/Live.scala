@@ -11,7 +11,7 @@ object Live extends Controller {
   /**
     * Handles the websocket.
     */
-  def socket(group: String, environment: String, serviceaction: String, code: String) = WebSocket.async[JsValue] {
+  def socket(group: String, environment: String, serviceaction: String, code: String) = WebSocket.tryAccept[JsValue] {
     implicit request =>
       // Create the client criterias based on the URL
       val clientCriterias = Criterias(group, environment, serviceaction, code, search = "", request = true, response = true)

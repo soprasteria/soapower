@@ -1,38 +1,42 @@
 package models
 
-import java.util.{TimeZone, GregorianCalendar, Calendar, Date}
-import play.api.Play.current
+import java.util.{Calendar, Date, GregorianCalendar, TimeZone}
+
+import play.api.Play.current // should be deprecated in favor of DI
 import play.api.cache.Cache
 import play.api.libs.json._
-import java.util.zip.{GZIPOutputStream, GZIPInputStream}
+import java.util.zip.{GZIPInputStream, GZIPOutputStream}
 import java.nio.charset.Charset
+import java.io.{ByteArrayInputStream, ByteArrayOutputStream}
 
-import java.io.{ByteArrayOutputStream, ByteArrayInputStream}
-
-import reactivemongo.api.indexes.{IndexType, Index}
+import reactivemongo.api.indexes.{Index, IndexType}
 
 import scala.concurrent.duration._
 import play.api.Logger
-import play.modules.reactivemongo.ReactiveMongoPlugin
+import play.modules.reactivemongo.{MongoController, ReactiveMongoApi, ReactiveMongoComponents}
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
+
 import scala.concurrent.{Await, Future}
 import reactivemongo.bson._
 import play.modules.reactivemongo.json.BSONFormats._
 import play.api.http.HeaderNames
 import org.joda.time.DateTime
+
 import scala.collection.mutable.ListBuffer
 import reactivemongo.bson.BSONDateTime
 import reactivemongo.bson.BSONBoolean
+
 import scala.util.Failure
 import scala.Some
 import reactivemongo.core.commands.RawCommand
 import reactivemongo.bson.BSONLong
 import reactivemongo.bson.BSONInteger
+
 import scala.util.Success
-import reactivemongo.api.collections.default.BSONCollection
 import reactivemongo.bson.BSONString
 import play.api.libs.json.JsObject
 import models.Stat.AnalysisEntity
+import reactivemongo.api.collections.bson.BSONCollection
 
 case class RequestData(_id: Option[BSONObjectID],
                        sender: String,
@@ -139,9 +143,10 @@ case class RequestData(_id: Option[BSONObjectID],
   }
 }
 
-object RequestData {
+object RequestData extends MongoController with ReactiveMongoComponents {
+  lazy val reactiveMongoApi = current.injector.instanceOf[ReactiveMongoApi]
 
-  def collection: BSONCollection = ReactiveMongoPlugin.db.collection[BSONCollection]("requestData")
+  def collection: BSONCollection = db.collection[BSONCollection]("requestData")
 
   def ensureIndexes() {
     Logger.info("Collection requestData, ensure index")
@@ -166,7 +171,7 @@ object RequestData {
     new BSONDocumentReader[Map[String, T]] {
       def read(doc: BSONDocument): Map[String, T] = {
         doc.elements.collect {
-          case (key, value) => value.seeAsOpt[T](reader) map {
+          case BSONElement(key, value) => value.seeAsOpt[T](reader) map {
             ov => (key, ov)
           }
         }.flatten.toMap
@@ -248,7 +253,7 @@ object RequestData {
       )
 
     var listRes = ListBuffer.empty[(String, List[String])]
-    val query = ReactiveMongoPlugin.db.command(RawCommand(command))
+    val query = db.command(RawCommand(command))
     query.map {
       b =>
         b.getAs[List[BSONValue]]("result").get.foreach {
@@ -284,7 +289,7 @@ object RequestData {
     Cache.getOrElse(keyCacheStatusOptions) {
       val command = RawCommand(BSONDocument("distinct" -> collection.name, "key" -> "status", "query" -> BSONDocument()))
       // example of return {"values":[200],"stats":{"n":16,"nscanned":16,"nscannedObjects":16,"timems":0,"cursor":"BasicCursor"},"ok":1.0}
-      ReactiveMongoPlugin.db.command(command) // result is Future[BSONDocument]
+      db.command(command) // result is Future[BSONDocument]
     }
   }
 
@@ -424,8 +429,8 @@ object RequestData {
       case Failure(e) => throw e
 
       case Success(lastError) => {
-        if (lastError.updatedExisting) {
-          updatedElement = lastError.updated
+        if (lastError.nModified > 0) {
+          updatedElement = lastError.nModified
           Logger.debug(updatedElement + " RequestData of the environment " + environmentIn + " has been purged by " + user)
         }
       }
@@ -468,7 +473,7 @@ object RequestData {
       case Failure(e) => throw e
 
       case Success(lastError) =>
-        removedElement = lastError.updated
+        removedElement = lastError.n
         Logger.debug(removedElement + " RequestData of the environment " + environmentIn + " has been purged")
     }
     Cache.remove(keyCacheServiceAction)
@@ -530,7 +535,7 @@ object RequestData {
 
     var ret: List[RequestData] = null
 
-    ReactiveMongoPlugin.db.command(RawCommand(command)).map {
+    db.command(RawCommand(command)).map {
       list => {
         list.elements.foreach {
           results => if (results._1 == "result") {
@@ -615,7 +620,7 @@ object RequestData {
           )
         )
       )
-    ReactiveMongoPlugin.db.command(RawCommand(command)).map {
+    db.command(RawCommand(command)).map {
       list =>
         var result = 0L
         list.elements.foreach {
@@ -723,7 +728,7 @@ object RequestData {
         )
       )
 
-    ReactiveMongoPlugin.db.command(RawCommand(command)).map {
+    db.command(RawCommand(command)).map {
       list => {
         var res = ListBuffer.empty[AnalysisEntity]
         list.elements.foreach {
@@ -925,7 +930,7 @@ object RequestData {
         )
       )
 
-    val query = ReactiveMongoPlugin.db.command(RawCommand(command))
+    val query = db.command(RawCommand(command))
     query.map {
       list =>
         val listRes = ListBuffer.empty[Stat]

@@ -3,7 +3,9 @@ package models
 import java.util.{Calendar, GregorianCalendar}
 
 import play.api.Logger
-import play.api.Play.current // This should be deprecated in favor of DI
+import play.api.Play.current
+
+// This should be deprecated in favor of DI
 import play.api.cache._
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.json._
@@ -56,6 +58,7 @@ object ModePurge extends Enumeration {
 
 object Environment extends MongoController with ReactiveMongoComponents {
   lazy val reactiveMongoApi = current.injector.instanceOf[ReactiveMongoApi]
+
   /*
    * Collection MongoDB
    */
@@ -124,8 +127,7 @@ object Environment extends MongoController with ReactiveMongoComponents {
     *
     * @return List of Environements, csv format
     */
-  def fetchCsv(): List[String] =
-  Await.result(findAll().map(environments => environments.map(_.toCSV)), 5.seconds)
+  def fetchCsv(): List[String] = Await.result(findAll().map(environments => environments.map(_.toCSV)), 5.seconds)
 
   /**
     * Upload a csvLine => insert environment.

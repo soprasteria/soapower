@@ -3,13 +3,16 @@ package models
 import java.util.Date
 
 import org.joda.time.DateTime
-import play.api.Play.current // should be deprecated in favor of DI
+import play.api.Play.current
 import play.Logger
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.json.Json
 import play.modules.reactivemongo.{MongoController, ReactiveMongoApi, ReactiveMongoComponents}
 import play.modules.reactivemongo.json._
+import reactivemongo.api.Cursor._
+import reactivemongo.api.{DefaultDB, FailoverStrategy}
 import reactivemongo.api.collections.bson.BSONCollection
+import reactivemongo.api.commands.WriteResult
 import reactivemongo.bson.{BSONString, _}
 import reactivemongo.core.commands.RawCommand
 
@@ -17,6 +20,7 @@ import scala.collection.mutable.ListBuffer
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
 import scala.util.{Failure, Success}
+import util.FutureOps._
 
 case class Stat(_id: Option[BSONObjectID],
                 groups: List[String],
@@ -38,7 +42,7 @@ object Stat extends MongoController with ReactiveMongoComponents {
    * Collection MongoDB
    *
    */
-  def collection: BSONCollection = db.collection[BSONCollection]("statistics")
+  def collection: Future[BSONCollection] = database.map(_.collection[BSONCollection]("statistics"))
 
   implicit val statsFormat = Json.format[Stat]
 
@@ -70,40 +74,34 @@ object Stat extends MongoController with ReactiveMongoComponents {
 
   /**
     * Insert stat
-    *
-    * @param stat
     */
-  def insert(stat: Stat) = {
-    val exists = findByGroupsEnvirServiceDate(stat)
-    exists.onComplete {
-      case Success(option) =>
-        if (!option.isDefined) {
-          Logger.debug("New statistics for env : " + stat.environmentName + ", in groups : " + stat.groups.mkString(", ") + " and for serviceAction : " + stat.serviceAction + " at " + stat.atDate.toDate)
-          collection.insert(stat)
-        } else {
-          Logger.debug("This statistic already exists")
-        }
-      case Failure(e) => throw new Exception("Error when inserting statistic")
+  def insert(stat: Stat): Future[Option[WriteResult]] = {
+    findByGroupsEnvirServiceDate(stat).flatMap {
+      case None =>
+        Logger.debug("New statistics for env : " + stat.environmentName + ", in groups : " + stat.groups.mkString(", ") + " and for serviceAction : " + stat.serviceAction + " at " + stat.atDate.toDate)
+        collection.flatMap(_.insert(stat)).toFutureOption
+      case Some(_) =>
+        Logger.debug("This statistic already exists")
+        Future.successful(None)
     }
   }
 
   def findAll(): Future[List[Stat]] = {
-    collection.
-      find(BSONDocument()).
-      sort(BSONDocument("groups" -> 1, "environmentName" -> 1, "serviceAction" -> 1)).
-      cursor[Stat].
-      collect[List]()
+    val errorHandler: ErrorHandler[List[Stat]] = FailOnError[List[Stat]]()
+    collection.flatMap(
+      _.find(BSONDocument())
+        .sort(BSONDocument("groups" -> 1, "environmentName" -> 1, "serviceAction" -> 1))
+        .cursor[Stat]()
+        .collect(maxDocs = -1, errorHandler)
+    )
   }
 
   /**
     * Find a stat using groups, environmentName and serviceaction
-    *
-    * @param stat
-    * @return
     */
   def findByGroupsEnvirServiceDate(stat: Stat): Future[Option[Stat]] = {
     val find = BSONDocument("groups" -> stat.groups, "environmentName" -> stat.environmentName, "serviceAction" -> stat.serviceAction, "atDate" -> BSONDocument("$eq" -> BSONDateTime(stat.atDate.toDate.getTime)))
-    collection.find(find).one[Stat]
+    collection.flatMap(_.find(find).one[Stat])
   }
 
   case class PageStat(groups: List[String], environmentName: String, serviceAction: String, avgInMillis: Long, treshold: Long)
@@ -111,10 +109,6 @@ object Stat extends MongoController with ReactiveMongoComponents {
   /**
     * Return a page of stats
     *
-    * @param groups
-    * @param environmentName
-    * @param minDate
-    * @param maxDate
     * @return a list of (groups, environmentName, serviceaction, avgTime, Treshold)
     */
   def find(groups: String, environmentName: String, minDate: Date, maxDate: Date): Future[List[PageStat]] = {
@@ -139,99 +133,103 @@ object Stat extends MongoController with ReactiveMongoComponents {
       matchQuery = matchQuery ++ ("environmentName" -> environmentName)
     }
 
-    val command =
-      BSONDocument(
-        "aggregate" -> collection.name, // we aggregate on collection
-        "pipeline" -> BSONArray(
-          BSONDocument(
-            "$match" -> matchQuery
-          ),
-          BSONDocument(
-            "$project" -> BSONDocument(
-              "groups" -> "$groups",
-              "environmentName" -> "$environmentName",
-              "serviceAction" -> "$serviceAction",
-              "atDate" -> "$atDate",
-              "nbOfRequestData" -> "$nbOfRequestData",
-              "ponderateAvg" -> BSONDocument("$multiply" -> BSONArray("$nbOfRequestData", "$avgInMillis"))
-            )
-          ),
-          BSONDocument(
-            "$group" -> BSONDocument(
-              "_id" -> BSONDocument("groups" -> "$groups",
+    val command = collection.map { c =>
+        BSONDocument(
+          "aggregate" -> c.name, // we aggregate on collection
+          "pipeline" -> BSONArray(
+            BSONDocument(
+              "$match" -> matchQuery
+            ),
+            BSONDocument(
+              "$project" -> BSONDocument(
+                "groups" -> "$groups",
                 "environmentName" -> "$environmentName",
-                "serviceAction" -> "$serviceAction"
-              ),
-              "sumOfPonderate" -> BSONDocument(
-                "$sum" -> "$ponderateAvg"
-              ),
-              "totalRequest" -> BSONDocument(
-                "$sum" -> "$nbOfRequestData"
+                "serviceAction" -> "$serviceAction",
+                "atDate" -> "$atDate",
+                "nbOfRequestData" -> "$nbOfRequestData",
+                "ponderateAvg" -> BSONDocument("$multiply" -> BSONArray("$nbOfRequestData", "$avgInMillis"))
               )
-            )
-          ),
-          BSONDocument(
-            "$project" -> BSONDocument(
-              "groups" -> "$groups",
-              "serviceAction" -> "$serviceAction",
-              "environment" -> "$environmentName",
-              "totalAvg" -> BSONDocument(
-                "$divide" -> BSONArray(
-                  "$sumOfPonderate",
-                  "$totalRequest"
+            ),
+            BSONDocument(
+              "$group" -> BSONDocument(
+                "_id" -> BSONDocument("groups" -> "$groups",
+                  "environmentName" -> "$environmentName",
+                  "serviceAction" -> "$serviceAction"
+                ),
+                "sumOfPonderate" -> BSONDocument(
+                  "$sum" -> "$ponderateAvg"
+                ),
+                "totalRequest" -> BSONDocument(
+                  "$sum" -> "$nbOfRequestData"
+                )
+              )
+            ),
+            BSONDocument(
+              "$project" -> BSONDocument(
+                "groups" -> "$groups",
+                "serviceAction" -> "$serviceAction",
+                "environment" -> "$environmentName",
+                "totalAvg" -> BSONDocument(
+                  "$divide" -> BSONArray(
+                    "$sumOfPonderate",
+                    "$totalRequest"
+                  )
                 )
               )
             )
           )
         )
-      )
+    }
 
     // Perform the query
-    val query = db.command(RawCommand(command))
-    query.map {
-      list =>
+    val query = command.flatMap(c => db.command(RawCommand(c)))
+    query.map { list =>
         // Decode the result
         var listRes = ListBuffer.empty[PageStat]
         list.elements.foreach {
           document =>
-            if (document._1 == "result") {
+            if (document.name == "result") {
               // We retrieve the result element (contain all the results)
-              if (document._2.isInstanceOf[BSONArray]) {
-                // Each result is a BSONArray containing a list of BSONDocuments
-                document._2.asInstanceOf[BSONArray].values.foreach {
-                  result =>
-                    var sa = ""
-                    var groups = ListBuffer.empty[String]
-                    var realEnvironmentName = ""
-                    var avg = 0.toLong
-                    if (result.isInstanceOf[BSONDocument]) {
-                      // Each BSONDocument is a statistics composed of the id (groups and service action) and the avg time
-                      result.asInstanceOf[BSONDocument].elements.foreach {
-                        stat =>
-                          if (stat._1 == "_id") {
-                            stat._2.asInstanceOf[BSONDocument].elements.foreach {
-                              groupsOrService =>
-                                if (groupsOrService._1 == "groups") {
-                                  // For each element we retrieve its groups
-                                  groupsOrService._2.asInstanceOf[BSONArray].values.foreach {
-                                    group =>
-                                      groups += group.asInstanceOf[BSONString].value
-                                  }
-                                } else if (groupsOrService._1 == "serviceAction") {
-                                  sa = groupsOrService._2.asInstanceOf[BSONString].value
-                                } else if (groupsOrService._1 == "environmentName") {
-                                  realEnvironmentName = groupsOrService._2.asInstanceOf[BSONString].value
+              document.value match {
+                case array: BSONArray =>
+                  // Each result is a BSONArray containing a list of BSONDocuments
+                  array.values.foreach {
+                    result =>
+                      var sa = ""
+                      var groups = ListBuffer.empty[String]
+                      var realEnvironmentName = ""
+                      var avg = 0.toLong
+                      result match {
+                        case document: BSONDocument =>
+                          // Each BSONDocument is a statistics composed of the id (groups and service action) and the avg time
+                          document.elements.foreach {
+                            stat =>
+                              if (stat.name == "_id") {
+                                stat.value.asInstanceOf[BSONDocument].elements.foreach {
+                                  groupsOrService =>
+                                    if (groupsOrService._1 == "groups") {
+                                      // For each element we retrieve its groups
+                                      groupsOrService._2.asInstanceOf[BSONArray].values.foreach {
+                                        group =>
+                                          groups += group.asInstanceOf[BSONString].value
+                                      }
+                                    } else if (groupsOrService._1 == "serviceAction") {
+                                      sa = groupsOrService._2.asInstanceOf[BSONString].value
+                                    } else if (groupsOrService._1 == "environmentName") {
+                                      realEnvironmentName = groupsOrService._2.asInstanceOf[BSONString].value
+                                    }
                                 }
-                            }
-                          } else if (stat._1 == "totalAvg") {
-                            // We retrieve the average
-                            avg = stat._2.asInstanceOf[BSONDouble].value.toLong
+                              } else if (stat._1 == "totalAvg") {
+                                // We retrieve the average
+                                avg = stat._2.asInstanceOf[BSONDouble].value.toLong
+                              }
                           }
+                        case _ =>
                       }
-                    }
-                    val pageStat = new PageStat(groups.toList, realEnvironmentName, sa, avg, serviceActions.apply((sa, groups.toList)))
-                    listRes += pageStat
-                }
+                      val pageStat = new PageStat(groups.toList, realEnvironmentName, sa, avg, serviceActions.apply((sa, groups.toList)))
+                      listRes += pageStat
+                  }
+                case _ =>
               }
             }
         }
@@ -274,9 +272,9 @@ object Stat extends MongoController with ReactiveMongoComponents {
       "$lt" -> BSONDateTime(maxDate.getTime))
       )
 
-    val command =
+    val command = collection.map { c =>
       BSONDocument(
-        "aggregate" -> collection.name, // we aggregate on collection
+        "aggregate" -> c.name, // we aggregate on collection
         "pipeline" -> BSONArray(
           BSONDocument(
             "$match" -> matchQuery
@@ -302,8 +300,10 @@ object Stat extends MongoController with ReactiveMongoComponents {
           )
         )
       )
+    }
 
-    db.command(RawCommand(command)).map {
+    val query = command.flatMap(c => db.command(RawCommand(c)))
+    query.map {
       list =>
         val resList = ListBuffer.empty[AnalysisEntity]
         list.elements.foreach {

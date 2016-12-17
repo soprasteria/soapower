@@ -15,6 +15,8 @@ libraryDependencies ++= Seq(
     "org.reactivemongo" %% "play2-reactivemongo" % "0.12.0-play24"
 )
 
+scalacOptions ++= Seq("-unchecked", "-deprecation")
+
 mappings in Universal ++= baseDirectory.map { dir => (dir / "soapowerctl.sh").*** --- dir pair relativeTo(dir) }.value
 
 buildInfoSettings

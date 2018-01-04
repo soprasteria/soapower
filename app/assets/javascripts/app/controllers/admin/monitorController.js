@@ -92,7 +92,8 @@ function MonitorCtrl($scope, $location, $window, $http) {
         if ($scope.isLiveOn == false) {
             $scope.isLiveOn = true;
             var WS = window['MozWebSocket'] ? MozWebSocket : WebSocket
-            $scope.socketLive = new WS("ws://" + $location.host() + ":" + $location.port() + "/monitor/socket")
+            var protocol = ($location.protocol() == "https")?"wss://":"ws://";
+            $scope.socketLive = new WS(protocol + $location.host() + ":" + $location.port() + "/monitor/socket")
             console.log("Websocket started");
             $scope.socketLive.onmessage = receiveEvent
         } else {
